@@ -1,5 +1,11 @@
 # eslint-plugin-import-x
 
+## 0.5.3
+
+### Patch Changes
+
+- [#85](https://github.com/un-ts/eslint-plugin-import-x/pull/85) [`ded3e80`](https://github.com/un-ts/eslint-plugin-import-x/commit/ded3e80fbf6eb2b4d0211a33c46b63496ddaca07) Thanks [@kosmotema](https://github.com/kosmotema)! - add languageOptions to ChildContext
+
 ## 0.5.2
 
 ### Patch Changes
