@@ -7,7 +7,6 @@ import type { Annotation } from 'doctrine'
 import doctrine from 'doctrine'
 import type { AST } from 'eslint'
 import { SourceCode } from 'eslint'
-import type { TsConfigJsonResolved } from 'get-tsconfig'
 import { getTsconfig } from 'get-tsconfig'
 import stableHash from 'stable-hash'
 
@@ -32,7 +31,7 @@ const log = debug('eslint-plugin-import-x:ExportMap')
 
 const exportCache = new Map<string, ExportMap | null>()
 
-const tsconfigCache = new Map<string, TsConfigJsonResolved | null>()
+const esModuleInteropCache = new Map<string, boolean>()
 
 export type DocStyleParsers = Record<
   DocStyle,
@@ -149,7 +148,7 @@ export class ExportMap {
     let ast: TSESTree.Program
     let visitorKeys: TSESLint.SourceCode.VisitorKeys | null
     try {
-      ;({ ast, visitorKeys } = parse(filepath, content, context))
+      ; ({ ast, visitorKeys } = parse(filepath, content, context))
     } catch (error) {
       m.errors.push(error as ParseError)
       return m // can't continue
@@ -390,33 +389,33 @@ export class ExportMap {
       let tsconfigRootDir = parserOptions.tsconfigRootDir
       const project = parserOptions.project
       const cacheKey = stableHash({ tsconfigRootDir, project })
-      let tsConfig: TsConfigJsonResolved | null
 
-      if (tsconfigCache.has(cacheKey)) {
-        tsConfig = tsconfigCache.get(cacheKey)!
-      } else {
-        tsconfigRootDir = tsconfigRootDir || process.cwd()
-        let tsconfigResult
-        if (project) {
-          const projects = Array.isArray(project) ? project : [project]
-          for (const project of projects) {
-            tsconfigResult = getTsconfig(
-              project === true
-                ? context.filename
-                : path.resolve(tsconfigRootDir, project),
-            )
-            if (tsconfigResult) {
-              break
-            }
-          }
-        } else {
-          tsconfigResult = getTsconfig(tsconfigRootDir)
-        }
-        tsConfig = (tsconfigResult && tsconfigResult.config) || null
-        tsconfigCache.set(cacheKey, tsConfig)
+      if (esModuleInteropCache.has(cacheKey)) {
+        return esModuleInteropCache.get(cacheKey)!
       }
 
-      return tsConfig?.compilerOptions?.esModuleInterop ?? false
+      tsconfigRootDir = tsconfigRootDir || process.cwd()
+      let tsconfigResult
+      if (project) {
+        const projects = Array.isArray(project) ? project : [project]
+        for (const project of projects) {
+          tsconfigResult = getTsconfig(
+            project === true
+              ? context.filename
+              : path.resolve(tsconfigRootDir, project),
+          )
+          if (tsconfigResult) {
+            break
+          }
+        }
+      } else {
+        tsconfigResult = getTsconfig(tsconfigRootDir)
+      }
+
+      const result = tsconfigResult?.config?.compilerOptions?.esModuleInterop ?? false;
+      esModuleInteropCache.set(cacheKey, result)
+
+      return result
     }
 
     for (const n of ast.body) {
@@ -512,17 +511,17 @@ export class ExportMap {
         const exportedName =
           n.type === 'TSNamespaceExportDeclaration'
             ? (
-                n.id ||
-                // @ts-expect-error - legacy parser type
-                n.name
-              ).name
+              n.id ||
+              // @ts-expect-error - legacy parser type
+              n.name
+            ).name
             : ('expression' in n &&
-                n.expression &&
-                (('name' in n.expression && n.expression.name) ||
-                  ('id' in n.expression &&
-                    n.expression.id &&
-                    n.expression.id.name))) ||
-              null
+              n.expression &&
+              (('name' in n.expression && n.expression.name) ||
+                ('id' in n.expression &&
+                  n.expression.id &&
+                  n.expression.id.name))) ||
+            null
 
         const getRoot = (
           node: TSESTree.TSQualifiedName,
@@ -541,7 +540,7 @@ export class ExportMap {
               ('name' in node.id
                 ? node.id.name === exportedName
                 : 'left' in node.id &&
-                  getRoot(node.id).name === exportedName)) ||
+                getRoot(node.id).name === exportedName)) ||
               ('declarations' in node &&
                 node.declarations.find(
                   d => 'name' in d.id && d.id.name === exportedName,
@@ -698,7 +697,7 @@ export class ExportMap {
 
   declare doc: Annotation | undefined
 
-  constructor(public path: string) {}
+  constructor(public path: string) { }
 
   get hasDefault() {
     return this.get('default') != null
