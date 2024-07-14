@@ -12,7 +12,7 @@ import stableHash from 'stable-hash'
 
 import type {
   ChildContext,
-  DocStyle,
+  DocStyleParsers,
   ExportDefaultSpecifier,
   ExportNamespaceSpecifier,
   ParseError,
@@ -21,7 +21,7 @@ import type {
 
 import { getValue } from './get-value'
 import { hasValidExtension, ignore } from './ignore'
-import { lazy, defineLazyProperty } from './lazy-value'
+import { lazy, defineLazyProperty, type LazyValue } from './lazy-value'
 import { parse } from './parse'
 import { relative, resolve } from './resolve'
 import { isMaybeUnambiguousModule, isUnambiguousModule } from './unambiguous'
@@ -31,12 +31,6 @@ const log = debug('eslint-plugin-import-x:ExportMap')
 
 const exportCache = new Map<string, ExportMap | null>()
 
-const esModuleInteropCache = new Map<string, boolean>()
-
-export type DocStyleParsers = Record<
-  DocStyle,
-  (comments: TSESTree.Comment[]) => Annotation | undefined
->
 
 export type DeclarationMetadata = {
   source: Pick<TSESTree.Literal, 'value' | 'loc'>
@@ -143,7 +137,6 @@ export class ExportMap {
 
   static parse(filepath: string, content: string, context: ChildContext) {
     const m = new ExportMap(filepath)
-    const isEsModuleInteropTrue = lazy(isEsModuleInterop)
 
     let ast: TSESTree.Program
     let visitorKeys: TSESLint.SourceCode.VisitorKeys | null
@@ -201,15 +194,6 @@ export class ExportMap {
 
     if (!hasDynamicImports && !unambiguouslyESM()) {
       return null
-    }
-
-    const docStyles = (context.settings &&
-      context.settings['import-x/docstyle']) || ['jsdoc']
-
-    const docStyleParsers = {} as DocStyleParsers
-
-    for (const style of docStyles) {
-      docStyleParsers[style] = availableDocStyleParsers[style]
     }
 
     const namespaces = new Map</* identifier */ string, /* source */ string>()
@@ -384,43 +368,11 @@ export class ExportMap {
 
     const source = new SourceCode({ text: content, ast: ast as AST.Program })
 
-    function isEsModuleInterop() {
-      const parserOptions = context.parserOptions || {}
-      let tsconfigRootDir = parserOptions.tsconfigRootDir
-      const project = parserOptions.project
-      const cacheKey = stableHash({ tsconfigRootDir, project })
-
-      if (esModuleInteropCache.has(cacheKey)) {
-        return esModuleInteropCache.get(cacheKey)!
-      }
-
-      tsconfigRootDir = tsconfigRootDir || process.cwd()
-      let tsconfigResult
-      if (project) {
-        const projects = Array.isArray(project) ? project : [project]
-        for (const project of projects) {
-          tsconfigResult = getTsconfig(
-            project === true
-              ? context.filename
-              : path.resolve(tsconfigRootDir, project),
-          )
-          if (tsconfigResult) {
-            break
-          }
-        }
-      } else {
-        tsconfigResult = getTsconfig(tsconfigRootDir)
-      }
-
-      const result = tsconfigResult?.config?.compilerOptions?.esModuleInterop ?? false;
-      esModuleInteropCache.set(cacheKey, result)
-
-      return result
-    }
+    const isEsModuleInterop = lazy(() => getIsEsModuleInterop(context))
 
     for (const n of ast.body) {
       if (n.type === 'ExportDefaultDeclaration') {
-        const exportMeta = captureDoc(source, docStyleParsers, n)
+        const exportMeta = captureDoc(source, context.docStyleParsers, n)
         if (n.declaration.type === 'Identifier') {
           addNamespace(exportMeta, n.declaration)
         }
@@ -476,7 +428,7 @@ export class ExportMap {
             case 'TSModuleDeclaration': {
               m.namespace.set(
                 (n.declaration.id as TSESTree.Identifier).name,
-                captureDoc(source, docStyleParsers, n),
+                captureDoc(source, context.docStyleParsers, n),
               )
               break
             }
@@ -486,7 +438,7 @@ export class ExportMap {
                 recursivePatternCapture(d.id, id =>
                   m.namespace.set(
                     (id as TSESTree.Identifier).name,
-                    captureDoc(source, docStyleParsers, d, n),
+                    captureDoc(source, context.docStyleParsers, d, n),
                   ),
                 )
               }
@@ -502,7 +454,7 @@ export class ExportMap {
       }
 
       const exports = ['TSExportAssignment']
-      if (isEsModuleInteropTrue()) {
+      if (isEsModuleInterop()) {
         exports.push('TSNamespaceExportDeclaration')
       }
 
@@ -550,12 +502,12 @@ export class ExportMap {
 
         if (exportedDecls.length === 0) {
           // Export is not referencing any local declaration, must be re-exporting
-          m.namespace.set('default', captureDoc(source, docStyleParsers, n))
+          m.namespace.set('default', captureDoc(source, context.docStyleParsers, n))
           continue
         }
 
         if (
-          isEsModuleInteropTrue() && // esModuleInterop is on in tsconfig
+          isEsModuleInterop() && // esModuleInterop is on in tsconfig
           !m.namespace.has('default') // and default isn't added already
         ) {
           m.namespace.set('default', {}) // add default export
@@ -570,11 +522,11 @@ export class ExportMap {
               m.namespace.set(
                 // @ts-expect-error - legacy parser type
                 (decl.body.id as TSESTree.Identifier).name,
-                captureDoc(source, docStyleParsers, decl.body),
+                captureDoc(source, context.docStyleParsers, decl.body),
               )
               continue
             } else if (type === 'TSModuleBlock' && decl.kind === 'namespace') {
-              const metadata = captureDoc(source, docStyleParsers, decl.body)
+              const metadata = captureDoc(source, context.docStyleParsers, decl.body)
               if ('name' in decl.id) {
                 m.namespace.set(decl.id.name, metadata)
               } else {
@@ -601,7 +553,7 @@ export class ExportMap {
                         (id as TSESTree.Identifier).name,
                         captureDoc(
                           source,
-                          docStyleParsers,
+                          context.docStyleParsers,
                           decl,
                           namespaceDecl,
                           moduleBlockNode,
@@ -611,7 +563,7 @@ export class ExportMap {
                 } else if ('id' in namespaceDecl) {
                   m.namespace.set(
                     (namespaceDecl.id as TSESTree.Identifier).name,
-                    captureDoc(source, docStyleParsers, moduleBlockNode),
+                    captureDoc(source, context.docStyleParsers, moduleBlockNode),
                   )
                 }
               }
@@ -620,7 +572,7 @@ export class ExportMap {
             // Export as default
             m.namespace.set(
               'default',
-              captureDoc(source, docStyleParsers, decl),
+              captureDoc(source, context.docStyleParsers, decl),
             )
           }
         }
@@ -648,7 +600,7 @@ export class ExportMap {
     })
 
     if (
-      isEsModuleInteropTrue() && // esModuleInterop is on in tsconfig
+      isEsModuleInterop() && // esModuleInterop is on in tsconfig
       m.namespace.size > 0 && // anything is exported
       !m.namespace.has('default') // and default isn't added already
     ) {
@@ -905,12 +857,48 @@ export class ExportMap {
   }
 }
 
+const esModuleInteropCache = new Map<string, boolean>()
+/** Given a rule context, get if the current file ihas esModuleInterop enabled */
+function getIsEsModuleInterop(context: ChildContext) {
+  const parserOptions = context.parserOptions || {}
+  let tsconfigRootDir = parserOptions.tsconfigRootDir
+  const project = parserOptions.project
+  const cacheKey = stableHash({ tsconfigRootDir, project })
+
+  if (esModuleInteropCache.has(cacheKey)) {
+    return esModuleInteropCache.get(cacheKey)!
+  }
+
+  tsconfigRootDir = tsconfigRootDir || process.cwd()
+  let tsconfigResult
+  if (project) {
+    const projects = Array.isArray(project) ? project : [project]
+    for (const project of projects) {
+      tsconfigResult = getTsconfig(
+        project === true
+          ? context.filename
+          : path.resolve(tsconfigRootDir, project),
+      )
+      if (tsconfigResult) {
+        break
+      }
+    }
+  } else {
+    tsconfigResult = getTsconfig(tsconfigRootDir)
+  }
+
+  const result = tsconfigResult?.config?.compilerOptions?.esModuleInterop ?? false;
+  esModuleInteropCache.set(cacheKey, result)
+
+  return result
+}
+
 /**
  * parse docs from the first node that has leading comments
  */
 function captureDoc(
   source: SourceCode,
-  docStyleParsers: DocStyleParsers,
+  docStyleParsers: LazyValue<DocStyleParsers>,
   ...nodes: Array<TSESTree.Node | undefined>
 ) {
   const metadata: {
@@ -940,7 +928,7 @@ function captureDoc(
           continue
         }
 
-        for (const parser of Object.values(docStyleParsers)) {
+        for (const parser of Object.values(docStyleParsers())) {
           const doc = parser(leadingComments)
           if (doc) {
             return doc
@@ -1100,6 +1088,13 @@ export function childContext(
       'physicalFilename' in context
         ? context.physicalFilename
         : context.filename,
+    docStyleParsers: lazy(() => (settings?.['import-x/docstyle'] || ['jsdoc'])
+      .reduce<DocStyleParsers>((acc, style) => {
+        if (style in availableDocStyleParsers) {
+          acc[style] = availableDocStyleParsers[style]
+        }
+        return acc
+      }, {}))
   }
 }
 

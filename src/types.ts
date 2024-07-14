@@ -30,11 +30,11 @@ export type Arrayable<T> = T | readonly T[]
 export type ImportResolver =
   | LiteralUnion<'node' | 'typescript' | 'webpack', string>
   | {
-      node?: boolean | NodeResolverOptions
-      typescript?: boolean | TsResolverOptions
-      webpack?: WebpackResolverOptions
-      [resolve: string]: unknown
-    }
+    node?: boolean | NodeResolverOptions
+    typescript?: boolean | TsResolverOptions
+    webpack?: WebpackResolverOptions
+    [resolve: string]: unknown
+  }
 
 export type ImportSettings = {
   cache?: {
@@ -54,8 +54,8 @@ export type ImportSettings = {
 export type WithPluginName<T extends string | object> = T extends string
   ? `${PluginName}/${KebabCase<T>}`
   : {
-      [K in keyof T as WithPluginName<`${KebabCase<K & string>}`>]: T[K]
-    }
+    [K in keyof T as WithPluginName<`${KebabCase<K & string>}`>]: T[K]
+  }
 
 export type PluginSettings = WithPluginName<ImportSettings>
 
@@ -74,6 +74,15 @@ export type RuleContext<
 }> &
   Omit<TSESLint.RuleContext<TMessageIds, TOptions>, 'settings'>
 
+import type { Annotation } from 'doctrine'
+import type { LazyValue } from './utils/lazy-value'
+
+export type DocStyleParsers = Partial<Record<
+  DocStyle,
+  (comments: TSESTree.Comment[]) => Annotation | undefined
+>>
+
+
 export type ChildContext = {
   cacheKey: string
   settings: PluginSettings
@@ -81,7 +90,8 @@ export type ChildContext = {
   parserOptions?: TSESLint.ParserOptions
   languageOptions?: TSESLint.FlatConfig.LanguageOptions
   path: string
-  filename?: string
+  filename?: string,
+  docStyleParsers: LazyValue<DocStyleParsers>
 }
 
 export type ParseError = {
