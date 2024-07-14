@@ -227,20 +227,10 @@ export class ExportMap {
       return ExportMap.for(childContext(rp, context))
     }
 
-    function getNamespace(namespace: string) {
-      if (!namespaces.has(namespace)) {
-        return
-      }
-
-      return function () {
-        return resolveImport(namespaces.get(namespace)!)
-      }
-    }
-
-    function addNamespace(object: object, identifier: TSESTree.Identifier) {
-      const nsfn = getNamespace(getValue(identifier))
-      if (nsfn) {
-        Object.defineProperty(object, 'namespace', { get: nsfn })
+    function addNamespace(object: ModuleNamespace, identifier: TSESTree.Identifier) {
+      const namespace = getValue(identifier);
+      if (namespaces.has(namespace)) {
+        Object.defineProperty(object, 'namespace', { get: () => resolveImport(namespaces.get(namespace)!) })
       }
       return object
     }
