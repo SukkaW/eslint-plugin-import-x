@@ -21,11 +21,10 @@ export = createRule<[], MessageId>({
   },
   defaultOptions: [],
   create(context) {
-    function checkDefault(
-      nameKey: 'local' | 'exported',
+    const checkDefaultFactory = (nameKey: 'local' | 'exported') => (
       defaultSpecifier: TSESTree.ImportDefaultSpecifier,
       // | TSESTree.ExportDefaultSpecifier,
-    ) {
+    ): void => {
       // #566: default is a valid specifier
       // @ts-expect-error - ExportDefaultSpecifier is unavailable yet
       const nameValue = defaultSpecifier[nameKey].name as string
@@ -56,9 +55,10 @@ export = createRule<[], MessageId>({
         })
       }
     }
+
     return {
-      ImportDefaultSpecifier: checkDefault.bind(null, 'local'),
-      ExportDefaultSpecifier: checkDefault.bind(null, 'exported'),
+      ImportDefaultSpecifier: checkDefaultFactory('local'),
+      ExportDefaultSpecifier: checkDefaultFactory('exported'),
     }
   },
 })
