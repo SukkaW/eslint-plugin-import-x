@@ -1,4 +1,5 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils'
+import type { Annotation } from 'doctrine'
 import type { ResolveOptions } from 'enhanced-resolve'
 import type { TsResolverOptions } from 'eslint-import-resolver-typescript'
 import type { MinimatchOptions } from 'minimatch'
@@ -30,16 +31,18 @@ export type Arrayable<T> = T | readonly T[]
 export type ImportResolver =
   | LiteralUnion<'node' | 'typescript' | 'webpack', string>
   | {
-    node?: boolean | NodeResolverOptions
-    typescript?: boolean | TsResolverOptions
-    webpack?: WebpackResolverOptions
-    [resolve: string]: unknown
-  }
+      node?: boolean | NodeResolverOptions
+      typescript?: boolean | TsResolverOptions
+      webpack?: WebpackResolverOptions
+      [resolve: string]: unknown
+    }
+
+export type ImportCacheSettings<LifeTime = number | '∞' | 'Infinity'> = {
+  lifetime: LifeTime
+}
 
 export type ImportSettings = {
-  cache?: {
-    lifetime?: number | '∞' | 'Infinity'
-  }
+  cache?: Partial<ImportCacheSettings<number | '∞' | 'Infinity'>>
   coreModules?: string[]
   docstyle?: DocStyle[]
   extensions?: readonly FileExtension[]
@@ -54,8 +57,8 @@ export type ImportSettings = {
 export type WithPluginName<T extends string | object> = T extends string
   ? `${PluginName}/${KebabCase<T>}`
   : {
-    [K in keyof T as WithPluginName<`${KebabCase<K & string>}`>]: T[K]
-  }
+      [K in keyof T as WithPluginName<`${KebabCase<K & string>}`>]: T[K]
+    }
 
 export type PluginSettings = WithPluginName<ImportSettings>
 
@@ -74,14 +77,11 @@ export type RuleContext<
 }> &
   Omit<TSESLint.RuleContext<TMessageIds, TOptions>, 'settings'>
 
-import type { Annotation } from 'doctrine'
 import type { LazyValue } from './utils/lazy-value'
 
-export type DocStyleParsers = Partial<Record<
-  DocStyle,
-  (comments: TSESTree.Comment[]) => Annotation | undefined
->>
-
+export type DocStyleParsers = Partial<
+  Record<DocStyle, (comments: TSESTree.Comment[]) => Annotation | undefined>
+>
 
 export type ChildContext = {
   cacheKey: string
@@ -90,7 +90,7 @@ export type ChildContext = {
   parserOptions?: TSESLint.ParserOptions
   languageOptions?: TSESLint.FlatConfig.LanguageOptions
   path: string
-  filename?: string,
+  filename?: string
   docStyleParsers: LazyValue<DocStyleParsers>
 }
 

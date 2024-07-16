@@ -120,9 +120,6 @@ export function fileExistsWithCaseSync(
   return result
 }
 
-let prevSettings: PluginSettings | null = null
-let memoizedHash: string
-
 function fullResolve(
   modulePath: string,
   sourceFile: string,
@@ -139,12 +136,7 @@ function fullResolve(
 
   const sourceDir = path.dirname(sourceFile)
 
-  if (prevSettings !== settings) {
-    memoizedHash = stableHash(settings)
-    prevSettings = settings
-  }
-
-  const cacheKey = sourceDir + memoizedHash + modulePath
+  const cacheKey = sourceDir + stableHash(settings) + modulePath
 
   const cacheSettings = ModuleCache.getSettings(settings)
 
