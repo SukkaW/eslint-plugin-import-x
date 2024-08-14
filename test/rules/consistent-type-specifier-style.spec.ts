@@ -460,10 +460,10 @@ describe('TypeScript', () => {
   })
 })
 
-describe('Babel/Flow', () => {
+describe('Hermes/Flow', () => {
   const ruleTester = new TSESLintRuleTester({
     languageOptions: {
-      parser: require(parsers.BABEL),
+      parser: require(parsers.HERMES),
       parserOptions: {
         ecmaVersion: 6,
         sourceType: 'module',
